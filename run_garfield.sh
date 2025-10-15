@@ -2,7 +2,7 @@
 
 folder=garfield_test
 dir=$folder
-w_v=-100
+w_v=0
 declare -a x_position=("0.00001" "0.0471" "0.0942" "0.1413" "0.1884" "0.2355")
 
 
