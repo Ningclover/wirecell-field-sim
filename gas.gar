@@ -1,0 +1,46 @@
+&GAS
+
+MATERIAL ARGON 100 density 1.395 work 23.3 fano 0.117
+*MIX ARGON 100
+
+gas-id "Liquid Argon"
+
+pressure     1.0  bar
+temperature  87.7 K
+
+cluster  
+0 0 
+1 100
+
+
+parameters a    39.94
+parameters z    18
+parameters rho  1.395
+parameters e-pair 23.3
+parameters e-most-probable 2.1e6
+parameters mean 1
+parameters transverse-ion-diffusion thermal
+parameters longitudinal-ion-diffusion thermal
+
+table e/p drift
+*read in velocity table from our global fit with different temperature
+*ICARUS at 89K
+*<./gas_file/table_89k.txt
+*ProtoDUNE/DUNE at 87.7K
+<./gas_file/table_87.7k.txt
+*MicroBooNE at 89.6K
+*<./gas_file/table_89.6k.txt
+
+*The line below removed the velocity definition above
+add drift-velocity v_LAr VS E_LAr
+interpolation drift-velocity quadratic
+extrapolation low-drift-velocity linear high-drift-velocity linear
+add ion-mobility 1.6e-9
+add townsend 0
+
+
+*options gas-plot gas-print
+*plot-options drift lin-x range 0 1.0 lin-y range 0.0 0.2 nodiffusion notownsen 
+*>./testzone/gas_file.txt
+*print E_LAr
+&MAIN
