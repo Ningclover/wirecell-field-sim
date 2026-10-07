@@ -1,0 +1,101 @@
+diff --git a/wirecell/sigproc/__main__.py b/wirecell/sigproc/__main__.py
+index 4b95cd4..84a6f65 100644
+--- a/wirecell/sigproc/__main__.py
++++ b/wirecell/sigproc/__main__.py
+@@ -187,11 +187,16 @@ def response_info(ctx, json_file):
+               help="Set location of zero wires.  def: 0 0 0")
+ @click.option("-d", "--delay", default=0, type=int,
+               help="Set additional delay of bins in the output field response.  def=0")
++@click.option("-w", "--weight", default=None, nargs=5, type=float,
++              help="Tune W-plane paths at impact 1.884/2.355 mm: "
++              "w1 w2 (amplitudes) w3 w4 (tail stretches) start (sample).  def: none")
++@click.option("--norm-plane", default="w", type=click.Choice(["u", "v", "w"]),
++              help="Plane whose region-0 paths set the reference charge for -n<0.  def=w")
+ @click.argument("garfield-fileset")
+ @click.argument("wirecell-field-response-file")
+ @click.pass_context
+ def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
+-                    delay, garfield_fileset, wirecell_field_response_file):
++                    delay, weight, norm_plane, garfield_fileset, wirecell_field_response_file):
+     '''
+     Convert an archive of a Garfield fileset (zip, tar, tgz) into a
+     Wire Cell field response file (.json with optional .gz or .bz2
+@@ -203,7 +208,8 @@ def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
+ 
+     origin = eval(origin, units.__dict__)
+     speed = eval(speed, units.__dict__)
+-    rflist = gar.load(garfield_fileset, normalization, zero_wire_locs, delay)
++    rflist = gar.load(garfield_fileset, normalization, zero_wire_locs, delay,
++                      weight=weight, norm_plane=norm_plane)
+     fr = rf1dtoschema(rflist, origin, speed)
+     per.dump(wirecell_field_response_file, fr)
+ 
+diff --git a/wirecell/sigproc/garfield.py b/wirecell/sigproc/garfield.py
+index 188a017..3b7ec3a 100644
+--- a/wirecell/sigproc/garfield.py
++++ b/wirecell/sigproc/garfield.py
+@@ -32,7 +32,24 @@ from wirecell.util.fileio import load as source_loader
+ from wirecell.resp.garfield import dataset_asdict
+ 
+ 
+-def load(source, normalization = None, zero_wire_loc = 0.0, delay=0):
++def scaled_current(times, current, amp, stretch, start):
++    '''Scale a current waveform by `amp` and stretch its tail in time.
++
++    Samples before index `start` keep their times.  Samples from
++    `start` on have their time offsets from times[start] multiplied by
++    `stretch`.  The result is re-interpolated onto the original
++    `times` grid.  Used for the ProtoDUNE-HD APA1 (V_w = 0 V) MCMC
++    tuning of the two outermost collection-plane paths.
++    '''
++    start = int(start)
++    t2 = times[start:]*stretch
++    t2 = t2 - (t2[0] - times[start])
++    times2 = numpy.concatenate((times[:start], t2))
++    return numpy.interp(times, times2, numpy.asarray(current)*amp)
++
++
++def load(source, normalization = None, zero_wire_loc = 0.0, delay=0,
++         weight=None, norm_plane='w'):
+     '''Load Garfield data source (eg, tarball).
+ 
+     Return list of response.ResponseFunction objects.
+@@ -52,6 +69,14 @@ def load(source, normalization = None, zero_wire_loc = 0.0, delay=0):
+     The `zero_wire_loc` is the transverse location of the wire to be
+     considered the central wire.
+ 
++    The `weight`, if given, is a 5-tuple (w1, w2, w3, w4, start)
++    applied to the W-plane paths at impact 1.884 mm (amplitude w1,
++    tail stretch w3) and 2.355 mm (amplitude w2, tail stretch w4),
++    with the tail starting at sample `start`.  See scaled_current().
++
++    The `norm_plane` selects the plane whose region-0 paths define the
++    reference charge used when `normalization` < 0.
++
+     '''
+     source = source_loader(source, pattern="*.dat")
+ 
+@@ -87,15 +112,21 @@ def load(source, normalization = None, zero_wire_loc = 0.0, delay=0):
+             relative_region = one['wire_region'] - zero_wire_region
+             fix_garfield_impact_sign = -1
+             impact_number = fix_garfield_impact_sign * one['impact']
++            current = numpy.asarray(one['y'])
++            if weight is not None and plane == 'w':
++                if one['impact'] == 1.884:
++                    current = scaled_current(times, current, weight[0], weight[2], weight[4])
++                elif one['impact'] == 2.355:
++                    current = scaled_current(times, current, weight[1], weight[3], weight[4])
+             rf = response.ResponseFunction(plane, relative_region,
+                                            one['wire_region_pos'],
+-                                           ls, numpy.asarray(one['y']),
++                                           ls, current,
+                                            impact_number)
+             this_plane.append(rf)
+         this_plane.sort(key=lambda x: x.region * 10000 + x.impact)
+         ret += this_plane
+ 
+-    w0 = [r for r in ret if r.region == 0 and r.plane == 'w']
++    w0 = [r for r in ret if r.region == 0 and r.plane == norm_plane]
+     dt = (w0[0].times[1]-w0[0].times[0])
+     itot = sum([sum(w.response) for w in w0])/len(w0)
+     qtot = itot*dt
